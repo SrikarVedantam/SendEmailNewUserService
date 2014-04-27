@@ -1,5 +1,6 @@
 package co.uk.escape;
 
+import org.springframework.amqp.core.DirectExchange;
 import org.springframework.amqp.core.FanoutExchange;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.core.TopicExchange;
@@ -14,6 +15,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
+import org.springframework.amqp.core.Binding;
+import org.springframework.amqp.core.BindingBuilder;
 
 import co.uk.escape.service.ReceiverSendEmailNewRegistrationService;
 
@@ -23,48 +26,43 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 @EnableAutoConfiguration
 @ComponentScan
 public class SendEmailNewUserConfiguration {
-	
+
 	final static String queueName = "user-registration";
-	
+
 	@Bean
 	Queue queue() {
-		return new Queue(queueName, false);
+		return new Queue(queueName + "-email", false);
 	}
-	
+
 	@Bean
-	RabbitTemplate template(ConnectionFactory connectionFactory){
-		Jackson2JsonMessageConverter jsonConverter = new Jackson2JsonMessageConverter();
-		RabbitTemplate rabbitTemplate = new RabbitTemplate(connectionFactory);
-		rabbitTemplate.setMessageConverter(jsonConverter);
-		return rabbitTemplate;
+	DirectExchange exchange() {
+		return new DirectExchange("user-registrations-exchange");
 	}
-	
-//	@Bean
-//	FanoutExchange exchange() {
-//		return new FanoutExchange("user-registrations-exchange");
-//	}
+
+	@Bean
+	Binding binding(Queue queue, DirectExchange exchange) {
+		return BindingBuilder.bind(queue).to(exchange).with("email");
+	}
 
 	@Bean
 	ReceiverSendEmailNewRegistrationService receiver() {
 		return new ReceiverSendEmailNewRegistrationService();
 	}
-	
+
 	@Bean
 	MessageListenerAdapter listenerAdapter(ReceiverSendEmailNewRegistrationService receiver) {
-		MessageListenerAdapter messageListenerAdapter = new MessageListenerAdapter(receiver, "sendEmailNewUser");	
+		MessageListenerAdapter messageListenerAdapter = new MessageListenerAdapter(receiver, "sendEmailNewUser");
 		Jackson2JsonMessageConverter jsonConverter = new Jackson2JsonMessageConverter();
 		messageListenerAdapter.setMessageConverter(jsonConverter);
 		return messageListenerAdapter;
 	}
 
-	
 	@Bean
-	SimpleMessageListenerContainer container(ConnectionFactory connectionFactory, MessageListenerAdapter listenerAdapter) {		
+	SimpleMessageListenerContainer container(Queue queue, ConnectionFactory connectionFactory, MessageListenerAdapter listenerAdapter) {
 		SimpleMessageListenerContainer container = new SimpleMessageListenerContainer();
-		container.setConcurrentConsumers(10);
 		container.setConnectionFactory(connectionFactory);
-		container.setQueueNames(queueName);
 		container.setMessageListener(listenerAdapter);
+		container.setQueues(queue);
 		return container;
 	}
 
